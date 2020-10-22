@@ -15,6 +15,7 @@ class SqlProblem:
     dataset = None
     answer_query = None
     verify_query = None
+    modification_query = None
     answer_result = None
     is_ordered = True
 
@@ -25,6 +26,7 @@ class SqlProblem:
             answer_query=None,
             dataset=None,
             verify_query=None,
+            modification_query=None,
             is_ordered=True,
     ):
         """
@@ -36,10 +38,12 @@ class SqlProblem:
         self.is_ordered = is_ordered
         self.answer_query = answer_query
         self.verify_query = verify_query
+        self.modification_query = modification_query
         self.answer_result, _ = SqlProblem.run_query(
             self.database,
             answer_query,
             verify_query,
+            modification_query,
         )
 
     def attempt(self, query):
@@ -50,6 +54,7 @@ class SqlProblem:
             self.database,
             query,
             self.verify_query,
+            self.modification_query,
         )
         comparison = SqlProblem.compare_rows(
             self.answer_result,
@@ -93,25 +98,46 @@ class SqlProblem:
         return destination
 
     @classmethod
-    def run_query(cls, source, query, verify_query=None):
+    def run_query(cls, source, query, verify_query=None,
+                  modification_query=None):
         """
-        Execute the provided SQL query against a copy of the database
+        Execute the provided answer and verification queries against a copy of
+        the database
         """
-        def run(database, query):
+        def run(database, query, is_single_query):
             result = []
             message = None
             with database as connection:
                 try:
-                    for row in connection.execute(query):
+                    if is_single_query:
+                        executor_func = connection.execute
+                    else:
+                        executor_func = connection.executescript
+                    rows = executor_func(query)
+                    # connection.executescript doesn't return anything, so the
+                    # following loop would be a no-op in such cases.
+                    for row in rows:
                         result.append(row)
                 except Exception as error:  # pylint: disable=broad-except
                     result = None
                     message = str(error)
             return result, message
+
         database = cls.clone_database(source)
-        result, error = run(database, query)
+
         if verify_query:
-            result, _ = run(database, verify_query)
+            is_single_query = False
+        else:
+            is_single_query = True
+        result, error = run(database, query, is_single_query)
+
+        if verify_query:
+            if modification_query:
+                # TODO: Add error checking here too
+                result, _ = run(database, modification_query,
+                                is_single_query=False)
+            result, error = run(database, verify_query,
+                                is_single_query=True)
         return result, error
 
     @staticmethod
@@ -124,8 +150,8 @@ class SqlProblem:
         if len(expected) != len(actual):
             return False
         if not is_ordered:
-            expected = sorted(expected)
-            actual = sorted(actual)
+            expected = sorted(expected, key=str)
+            actual = sorted(actual, key=str)
         comparison = all(
             row_expected == row_actual
             for row_expected, row_actual in zip(expected, actual)
