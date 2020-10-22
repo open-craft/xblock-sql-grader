@@ -102,7 +102,16 @@ class SqlProblem:
             message = None
             with database as connection:
                 try:
-                    for row in connection.execute(query):
+                    try:
+                        # Try execute() before executescript() as executescript
+                        # doesn't returns rows from SELECT statements
+                        rows = connection.execute(query)
+                    except sqlite3.Warning as warning:
+                        if str(warning).startswith('You can only execute one'):
+                            rows = connection.executescript(query)
+                        else:
+                            raise warning
+                    for row in rows:
                         result.append(row)
                 except Exception as error:  # pylint: disable=broad-except
                     result = None
