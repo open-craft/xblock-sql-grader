@@ -68,5 +68,6 @@ class SqlGrader(
             'result': actual,
             'expected': expected,
             'verify': self.verify_query,
+            'pre_verify': self.pre_verify_query,
             'error': error,
         }

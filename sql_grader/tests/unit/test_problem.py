@@ -90,11 +90,11 @@ class TestGrading(TestCase):
         self.assertEqual(submission_result, answer_result)
         self.assertEqual(len(submission_result), 1)
 
-    def test_update_multiple_statements(self):
+    def test_multiple_statements(self):
         """
         Test queries with multiple statements in them
         """
-        verify_query = "SELECT * FROM Movie where mID < 10"
+        verify_query = "select * from Movie where mID < 10"
         answer_query = """
         insert into Movie values(1, 'Movie', 2000, 'Director');
         insert into Movie values(2, 'Movie 2', 2000, 'Director 2');
@@ -117,6 +117,63 @@ class TestGrading(TestCase):
         self.assertEqual(comparison, True)
         self.assertEqual(submission_result, answer_result)
         self.assertEqual(len(submission_result), 2)
+
+        verify_query = """
+        insert into Movie values(3, 'Movie', 2000, 'Director 3');
+        SELECT * FROM Movie where mID < 10;
+        """
+        submission_result, answer_result, error, comparison = SqlProblem(
+            answer_query=answer_query,
+            database=self.database,
+            verify_query=verify_query,
+            is_ordered=False
+        ).attempt(query)
+
+        self.assertNotEqual(error, None)
+
+    def test_pre_verification(self):
+        """
+        Test that pre_verify_query is executed before checking outputs
+        """
+        answer_query = """
+        create trigger change1
+        after insert on Movie
+        for each row
+        when (new.year > 1980 and new.year < 1990)
+          begin update Movie
+            set title="80s movie" where mID=new.mID; end;
+
+        create trigger change2
+        after insert on Movie
+        for each row
+        when (new.year is NULL)
+          begin update Movie
+            set director=NULL where mID=new.mID end;
+        """
+        query = answer_query
+        pre_verify_query = """
+        insert into Movie values (1, "E.T.", 1982, "Steven Spielberg");
+        insert into Movie values (2, null, 1992, "David Fincher");
+        """
+        verify_query = """
+        select * from Movie
+        where title like '80s %' or title IS NULL
+        """
+
+        submission_result, answer_result, error, comparison = SqlProblem(
+            answer_query=answer_query,
+            database=self.database,
+            verify_query=verify_query,
+            pre_verify_query=pre_verify_query,
+            is_ordered=False
+        ).attempt(query)
+        self.assertEqual(error, None)
+        self.assertEqual(comparison, True)
+        self.assertEqual(submission_result, answer_result)
+        self.assertEqual(submission_result, [
+            (1, '80s movie', 1982, 'Steven Spielberg'),
+            (2, None, 1992, 'David Fincher')
+        ])
 
     def test_error(self):
         """

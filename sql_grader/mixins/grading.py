@@ -23,8 +23,9 @@ from ..problem import all_datasets
 log = logging.getLogger('sql_grader')
 
 
-# pylint: disable=unused-argument
-def attempt_safe(dataset, answer_query, verify_query, is_ordered, query):
+# pylint: disable=unused-argument,too-many-arguments
+def attempt_safe(dataset, answer_query, verify_query, pre_verify_query,
+                 is_ordered, query):
     """
     Attempt a SqlProblem, using codejail to sandbox the execution.
     """
@@ -32,6 +33,7 @@ def attempt_safe(dataset, answer_query, verify_query, is_ordered, query):
         'answer_query': answer_query,
         'dataset': dataset,
         'verify_query': verify_query,
+        'pre_verify_query': pre_verify_query,
         'is_ordered': is_ordered,
         'query': query
     }
@@ -41,6 +43,7 @@ submission_result, answer_result, error, comparison = SqlProblem(
     answer_query=answer_query,
     dataset=dataset,
     verify_query=verify_query,
+    pre_verify_query=pre_verify_query,
     is_ordered=is_ordered
 ).attempt(query)
 
@@ -142,6 +145,7 @@ class Scorable(ScorableXBlockMixin):
             self.dataset,
             self.answer_query,
             self.verify_query,
+            self.pre_verify_query,
             self.is_ordered,
             self.raw_response
         )
@@ -185,6 +189,19 @@ class XBlockDataMixin:
         help=_(
             'A secondary verification SQL query, to be used if the '
             'answer_query modifies the database (UPDATE, INSERT, DELETE, etc.)'
+            '. Only enter a single SELECT query here, which is used for '
+            'matching the answer'
+        ),
+        default='',
+        scope=Scope.content,
+        multiline_editor=True,
+    )
+    pre_verify_query = String(
+        display_name=_('Pre Verify-Query statements'),
+        help=_(
+            'Optional SQL statements, to be executed before the verify_query. '
+            'Any modifications which are to be performed after executing the '
+            'user submitted query can be done here.'
         ),
         default='',
         scope=Scope.content,
@@ -201,6 +218,7 @@ class XBlockDataMixin:
         'dataset',
         'display_name',
         'verify_query',
+        'pre_verify_query',
         'is_ordered',
         'prompt',
         'weight',
@@ -237,5 +255,6 @@ class XBlockDataMixin:
             'error_class': error_class,
             'raw_response': self.raw_response,
             'verify_query': self.verify_query,
+            'pre_verify_query': self.pre_verify_query,
         })
         return context

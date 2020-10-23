@@ -7,6 +7,19 @@ import sqlite3
 import pkg_resources
 
 
+class VerifyQeuryException(Exception):
+    """
+    Exception thrown when Verification Query has multiple statements
+    """
+    default_msg = ('Verification query should not contain multiple statemtents'
+                   '. Check problem configuration.')
+
+    def __init__(self, *args, msg=None, **kwargs):
+        if msg is None:
+            msg = self.default_msg
+        super().__init__(msg, *args, **kwargs)
+
+
 class SqlProblem:
     """
     Handle modeling and processing of SQL problems aside from XBlock logic
@@ -15,6 +28,7 @@ class SqlProblem:
     dataset = None
     answer_query = None
     verify_query = None
+    pre_verify_query = None
     answer_result = None
     is_ordered = True
 
@@ -25,6 +39,7 @@ class SqlProblem:
             answer_query=None,
             dataset=None,
             verify_query=None,
+            pre_verify_query=None,
             is_ordered=True,
     ):
         """
@@ -36,10 +51,12 @@ class SqlProblem:
         self.is_ordered = is_ordered
         self.answer_query = answer_query
         self.verify_query = verify_query
+        self.pre_verify_query = pre_verify_query
         self.answer_result, _ = SqlProblem.run_query(
             self.database,
             answer_query,
             verify_query,
+            pre_verify_query,
         )
 
     def attempt(self, query):
@@ -50,6 +67,7 @@ class SqlProblem:
             self.database,
             query,
             self.verify_query,
+            self.pre_verify_query,
         )
         comparison = SqlProblem.compare_rows(
             self.answer_result,
@@ -93,11 +111,12 @@ class SqlProblem:
         return destination
 
     @classmethod
-    def run_query(cls, source, query, verify_query=None):
+    def run_query(cls, source, query, verify_query=None,
+                  pre_verify_query=None):
         """
         Execute the provided SQL query against a copy of the database
         """
-        def run(database, query):
+        def run(database, query, is_verify_query=False):
             result = []
             message = None
             with database as connection:
@@ -108,6 +127,9 @@ class SqlProblem:
                         rows = connection.execute(query)
                     except sqlite3.Warning as warning:
                         if str(warning).startswith('You can only execute one'):
+                            if is_verify_query:
+                                # pylint: disable=raise-missing-from
+                                raise VerifyQeuryException()
                             rows = connection.executescript(query)
                         else:
                             raise warning
@@ -120,7 +142,9 @@ class SqlProblem:
         database = cls.clone_database(source)
         result, error = run(database, query)
         if verify_query:
-            result, _ = run(database, verify_query)
+            if pre_verify_query:
+                result, _ = run(database, pre_verify_query)
+            result, error = run(database, verify_query, True)
         return result, error
 
     @staticmethod
@@ -133,8 +157,8 @@ class SqlProblem:
         if len(expected) != len(actual):
             return False
         if not is_ordered:
-            expected = sorted(expected)
-            actual = sorted(actual)
+            expected = sorted(expected, key=str)
+            actual = sorted(actual, key=str)
         comparison = all(
             row_expected == row_actual
             for row_expected, row_actual in zip(expected, actual)
