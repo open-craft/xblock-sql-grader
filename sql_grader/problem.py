@@ -28,7 +28,7 @@ class SqlProblem:
     dataset = None
     answer_query = None
     verify_query = None
-    pre_verify_query = None
+    modification_query = None
     answer_result = None
     is_ordered = True
 
@@ -39,7 +39,7 @@ class SqlProblem:
             answer_query=None,
             dataset=None,
             verify_query=None,
-            pre_verify_query=None,
+            modification_query=None,
             is_ordered=True,
     ):
         """
@@ -51,23 +51,23 @@ class SqlProblem:
         self.is_ordered = is_ordered
         self.answer_query = answer_query
         self.verify_query = verify_query
-        self.pre_verify_query = pre_verify_query
-        self.answer_result, _ = SqlProblem.run_query(
+        self.modification_query = modification_query
+        self.answer_result, _ = SqlProblem.get_query_result(
             self.database,
             answer_query,
             verify_query,
-            pre_verify_query,
+            modification_query,
         )
 
     def attempt(self, query):
         """
         Attempt to answer the problem with the provided query
         """
-        submission_result, error = SqlProblem.run_query(
+        submission_result, error = SqlProblem.get_query_result(
             self.database,
             query,
             self.verify_query,
-            self.pre_verify_query,
+            self.modification_query,
         )
         comparison = SqlProblem.compare_rows(
             self.answer_result,
@@ -111,41 +111,52 @@ class SqlProblem:
         return destination
 
     @classmethod
-    def run_query(cls, source, query, verify_query=None,
-                  pre_verify_query=None):
+    def get_query_result(cls, source, query, verify_query=None,
+                         modification_query=None):
         """
-        Execute the provided SQL query against a copy of the database
+        Execute the provided answer and verification queries against a copy of
+        the database, and returns the final result.
         """
-        def run(database, query, is_verify_query=False):
-            result = []
-            message = None
-            with database as connection:
-                try:
-                    try:
-                        # Try execute() before executescript() as executescript
-                        # doesn't returns rows from SELECT statements
-                        rows = connection.execute(query)
-                    except sqlite3.Warning as warning:
-                        if str(warning).startswith('You can only execute one'):
-                            if is_verify_query:
-                                # pylint: disable=raise-missing-from
-                                raise VerifyQeuryException()
-                            rows = connection.executescript(query)
-                        else:
-                            raise warning
-                    for row in rows:
-                        result.append(row)
-                except Exception as error:  # pylint: disable=broad-except
-                    result = None
-                    message = str(error)
-            return result, message
         database = cls.clone_database(source)
-        result, error = run(database, query)
+        result, error = SqlProblem._run(database, query)
         if verify_query:
-            if pre_verify_query:
-                result, _ = run(database, pre_verify_query)
-            result, error = run(database, verify_query, True)
+            if modification_query:
+                result, _ = SqlProblem._run(database, modification_query)
+            result, error = SqlProblem._run(database, verify_query, True)
         return result, error
+
+    @staticmethod
+    def _run(database, query, is_verify_query=False):
+        """
+        Executes a single SQL query on the database.
+        is_verify_query prevents execution of multiple statements.
+        """
+        def execute_query(connection, query, is_verify_query):
+            try:
+                # Try execute() before executescript() as executescript
+                # doesn't returns rows from SELECT statements
+                rows = connection.execute(query)
+            except sqlite3.Warning as warning:
+                if str(warning).startswith('You can only execute one'):
+                    if is_verify_query:
+                        # pylint: disable=raise-missing-from
+                        raise VerifyQeuryException()
+                    rows = connection.executescript(query)
+                else:
+                    raise warning
+            return rows
+
+        result = []
+        message = None
+        with database as connection:
+            try:
+                rows = execute_query(connection, query, is_verify_query)
+                for row in rows:
+                    result.append(row)
+            except Exception as error:  # pylint: disable=broad-except
+                result = None
+                message = str(error)
+        return result, message
 
     @staticmethod
     def compare_rows(expected, actual, is_ordered=True):

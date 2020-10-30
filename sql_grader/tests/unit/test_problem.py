@@ -133,7 +133,7 @@ class TestGrading(TestCase):
 
     def test_pre_verification(self):
         """
-        Test that pre_verify_query is executed before checking outputs
+        Test that modification_query is executed before checking outputs
         """
         answer_query = """
         create trigger change1
@@ -151,7 +151,7 @@ class TestGrading(TestCase):
             set director=NULL where mID=new.mID end;
         """
         query = answer_query
-        pre_verify_query = """
+        modification_query = """
         insert into Movie values (1, "E.T.", 1982, "Steven Spielberg");
         insert into Movie values (2, null, 1992, "David Fincher");
         """
@@ -164,7 +164,7 @@ class TestGrading(TestCase):
             answer_query=answer_query,
             database=self.database,
             verify_query=verify_query,
-            pre_verify_query=pre_verify_query,
+            modification_query=modification_query,
             is_ordered=False
         ).attempt(query)
         self.assertEqual(error, None)
