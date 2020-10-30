@@ -52,7 +52,7 @@ class SqlProblem:
         self.answer_query = answer_query
         self.verify_query = verify_query
         self.modification_query = modification_query
-        self.answer_result, _ = SqlProblem.get_query_result(
+        self.answer_result, _ = SqlProblem.run_query(
             self.database,
             answer_query,
             verify_query,
@@ -63,7 +63,7 @@ class SqlProblem:
         """
         Attempt to answer the problem with the provided query
         """
-        submission_result, error = SqlProblem.get_query_result(
+        submission_result, error = SqlProblem.run_query(
             self.database,
             query,
             self.verify_query,
@@ -111,52 +111,42 @@ class SqlProblem:
         return destination
 
     @classmethod
-    def get_query_result(cls, source, query, verify_query=None,
-                         modification_query=None):
+    def run_query(cls, source, query, verify_query=None,
+                  modification_query=None):
         """
         Execute the provided answer and verification queries against a copy of
-        the database, and returns the final result.
+        the database
         """
+        def run(database, query, is_single_query):
+            result = []
+            message = None
+            with database as connection:
+                try:
+                    if is_single_query:
+                        executor_func = connection.execute
+                    else:
+                        executor_func = connection.executescript
+                    rows = executor_func(query)
+                    for row in rows:
+                        result.append(row)
+                except Exception as error:  # pylint: disable=broad-except
+                    result = None
+                    message = str(error)
+            return result, message
+
         database = cls.clone_database(source)
-        result, error = SqlProblem._run(database, query)
+
+        if verify_query:
+            is_single_query = False
+        else:
+            is_single_query = True
+        result, error = run(database, query, is_single_query)
+
         if verify_query:
             if modification_query:
-                result, _ = SqlProblem._run(database, modification_query)
-            result, error = SqlProblem._run(database, verify_query, True)
+                result, _ = run(database, modification_query, False)
+            result, error = run(database, verify_query, True)
         return result, error
-
-    @staticmethod
-    def _run(database, query, is_verify_query=False):
-        """
-        Executes a single SQL query on the database.
-        is_verify_query prevents execution of multiple statements.
-        """
-        def execute_query(connection, query, is_verify_query):
-            try:
-                # Try execute() before executescript() as executescript
-                # doesn't returns rows from SELECT statements
-                rows = connection.execute(query)
-            except sqlite3.Warning as warning:
-                if str(warning).startswith('You can only execute one'):
-                    if is_verify_query:
-                        # pylint: disable=raise-missing-from
-                        raise VerifyQeuryException()
-                    rows = connection.executescript(query)
-                else:
-                    raise warning
-            return rows
-
-        result = []
-        message = None
-        with database as connection:
-            try:
-                rows = execute_query(connection, query, is_verify_query)
-                for row in rows:
-                    result.append(row)
-            except Exception as error:  # pylint: disable=broad-except
-                result = None
-                message = str(error)
-        return result, message
 
     @staticmethod
     def compare_rows(expected, actual, is_ordered=True):
