@@ -7,19 +7,6 @@ import sqlite3
 import pkg_resources
 
 
-class VerifyQeuryException(Exception):
-    """
-    Exception thrown when Verification Query has multiple statements
-    """
-    default_msg = ('Verification query should not contain multiple statemtents'
-                   '. Check problem configuration.')
-
-    def __init__(self, *args, msg=None, **kwargs):
-        if msg is None:
-            msg = self.default_msg
-        super().__init__(msg, *args, **kwargs)
-
-
 class SqlProblem:
     """
     Handle modeling and processing of SQL problems aside from XBlock logic
@@ -127,6 +114,8 @@ class SqlProblem:
                     else:
                         executor_func = connection.executescript
                     rows = executor_func(query)
+                    # connection.executescript doesn't return anything, so the
+                    # following loop would be a no-op in such cases.
                     for row in rows:
                         result.append(row)
                 except Exception as error:  # pylint: disable=broad-except
@@ -144,8 +133,11 @@ class SqlProblem:
 
         if verify_query:
             if modification_query:
-                result, _ = run(database, modification_query, False)
-            result, error = run(database, verify_query, True)
+                # TODO: Add error checking here too
+                result, _ = run(database, modification_query,
+                                is_single_query=False)
+            result, error = run(database, verify_query,
+                                is_single_query=True)
         return result, error
 
     @staticmethod
