@@ -50,7 +50,7 @@ class TestGrading(TestCase):
 
         # Verify that comparison is False if different rows are returned
         submission_result, answer_result, error, comparison = SqlProblem(
-            answer_query="answer_query",
+            answer_query=answer_query,
             database=self.database,
             verify_query=verify_query,
             is_ordered=False
@@ -60,7 +60,7 @@ class TestGrading(TestCase):
 
         # Verify that comparison is False if different columns are returned
         submission_result, answer_result, error, comparison = SqlProblem(
-            answer_query="answer_query",
+            answer_query=answer_query,
             database=self.database,
             verify_query=verify_query,
             is_ordered=False
@@ -148,7 +148,7 @@ class TestGrading(TestCase):
         for each row
         when (new.year is NULL)
           begin update Movie
-            set director=NULL where mID=new.mID end;
+            set director=NULL where mID=new.mID; end;
         """
         query = answer_query
         modification_query = """
@@ -179,16 +179,54 @@ class TestGrading(TestCase):
         """
         Test that invalid queries produce error
         """
-        verify_query = None
-        answer_query = "SELECT * FROM Movie;"
-        query = "Not a SQL Query;"
-
-        # Verify that comparison returns False if is_ordered = True
+        # Verify that errors are displayed when problem itself contains errors
         _, _, error, _ = SqlProblem(
-            answer_query=answer_query,
+            answer_query="Not a query;",
             database=self.database,
-            verify_query=verify_query,
+            verify_query=None,
             is_ordered=True
-        ).attempt(query)
+        ).attempt("Not a SQL Query;")
+        self.assertIn("Problem setup incorrectly", error)
+        self.assertIn("syntax error", error)
 
-        self.assertNotEqual(error, None)
+        _, _, error, _ = SqlProblem(
+            answer_query="",
+            database=self.database,
+            verify_query="Not a query;",
+            is_ordered=True
+        ).attempt("Not a SQL Query;")
+        self.assertIn("Problem setup incorrectly", error)
+        self.assertIn("verify_query", error)
+        self.assertIn("syntax error", error)
+
+        _, _, error, _ = SqlProblem(
+            answer_query="",
+            database=self.database,
+            verify_query="SELECT;",
+            modification_query="Not a query;",
+            is_ordered=True
+        ).attempt("Not a SQL Query;")
+        self.assertIn("Problem setup incorrectly", error)
+        self.assertIn("modification_query", error)
+        self.assertIn("syntax error", error)
+
+        # Verify that errors are displayed when submitted query contains errors
+        _, _, error, _ = SqlProblem(
+            answer_query="SELECT * FROM Movie;",
+            database=self.database,
+            verify_query=None,
+            is_ordered=True
+        ).attempt("Not a SQL Query;")
+        self.assertNotIn("Problem setup incorrectly", error)
+        self.assertIn("syntax error", error)
+
+        # Verify that errors are displayed when verification queries error out
+        _, _, error, _ = SqlProblem(
+            answer_query="",
+            database=self.database,
+            verify_query="select * from Movie",
+            is_ordered=True
+        ).attempt("alter table Movie rename to Movie2")
+        self.assertNotIn("Problem setup incorrectly", error)
+        self.assertIn("no such table", error)
+        self.assertIn("verify_query", error)

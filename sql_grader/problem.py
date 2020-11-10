@@ -39,7 +39,7 @@ class SqlProblem:
         self.answer_query = answer_query
         self.verify_query = verify_query
         self.modification_query = modification_query
-        self.answer_result, _ = SqlProblem.run_query(
+        self.answer_result, self.answer_error = SqlProblem.run_query(
             self.database,
             answer_query,
             verify_query,
@@ -50,6 +50,11 @@ class SqlProblem:
         """
         Attempt to answer the problem with the provided query
         """
+        if self.answer_error:
+            return (None,
+                    None,
+                    'Problem setup incorrectly: {}'.format(self.answer_error),
+                    False)
         submission_result, error = SqlProblem.run_query(
             self.database,
             query,
@@ -125,20 +130,25 @@ class SqlProblem:
 
         database = cls.clone_database(source)
 
-        if verify_query:
-            is_single_query = False
-        else:
-            is_single_query = True
-        result, error = run(database, query, is_single_query)
+        # `query` should be a single select statement if no verify_query is
+        # present in the problem
+        result, error = run(database, query, is_single_query=not verify_query)
+        if error:
+            return None, error
 
         if verify_query:
             if modification_query:
-                # TODO: Add error checking here too
-                result, _ = run(database, modification_query,
-                                is_single_query=False)
+                _, error = run(database, modification_query,
+                               is_single_query=False)
+                if error:
+                    return None, 'modification_query: {}'.format(error)
+
             result, error = run(database, verify_query,
                                 is_single_query=True)
-        return result, error
+            if error:
+                return None, 'verify_query: {}'.format(error)
+
+        return result, None
 
     @staticmethod
     def compare_rows(expected, actual, is_ordered=True):
