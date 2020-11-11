@@ -2,11 +2,8 @@
 Mixin grading-related functionality
 """
 import logging
-import os.path
 
 from django.utils.translation import ugettext_lazy as _
-
-from codejail.safe_exec import safe_exec, SafeExecException
 
 from xblock.fields import Boolean
 from xblock.fields import Float
@@ -17,64 +14,9 @@ from xblock.fields import String
 from xblock.scorable import ScorableXBlockMixin
 from xblock.scorable import Score
 
-from ..problem import all_datasets
-
+from ..problem import all_datasets, SqlProblem
 
 log = logging.getLogger('sql_grader')
-
-
-# pylint: disable=unused-argument,too-many-arguments
-def attempt_safe(dataset, answer_query, verify_query, modification_query,
-                 is_ordered, query):
-    """
-    Attempt a SqlProblem, using codejail to sandbox the execution.
-    """
-    results = {
-        'answer_query': answer_query,
-        'dataset': dataset,
-        'verify_query': verify_query,
-        'modification_query': modification_query,
-        'is_ordered': is_ordered,
-        'query': query
-    }
-    code = """
-from sql_grader.problem import SqlProblem
-submission_result, answer_result, error, comparison = SqlProblem(
-    answer_query=answer_query,
-    dataset=dataset,
-    verify_query=verify_query,
-    modification_query=modification_query,
-    is_ordered=is_ordered
-).attempt(query)
-
-"""
-    # example from edx-platform's use of codejail:
-    # https://github.com/edx/edx-platform/blob/master/common/lib/capa/capa/capa_problem.py#L887
-    # we have to include the path to the entire sql_grader package.
-    python_path = [os.path.abspath(
-        os.path.join(
-            os.path.dirname(__file__),
-            '../..'
-        )
-    )]
-
-    try:
-        safe_exec(code, results, python_path=python_path, slug='sql_grader')
-    except SafeExecException:
-        log.exception(query)
-        # how should resource limits be communicated to the user?
-        results = {
-            'submission_result': None,
-            'answer_result': None,
-            'error': _("We could not execute your query; please try again."),
-            'comparison': None,
-        }
-    return (
-        results['submission_result'],
-        results['answer_result'],
-        results['error'],
-        results['comparison'],
-    )
 
 
 class Scorable(ScorableXBlockMixin):
@@ -141,14 +83,13 @@ class Scorable(ScorableXBlockMixin):
         """
         raw_possible = 1.0
         raw_earned = 0.0
-        actual, expected, error, comparison = attempt_safe(
-            self.dataset,
-            self.answer_query,
-            self.verify_query,
-            self.modification_query,
-            self.is_ordered,
-            self.raw_response
-        )
+        actual, expected, error, comparison = SqlProblem(
+            answer_query=self.answer_query,
+            dataset=self.dataset,
+            verify_query=self.verify_query,
+            modification_query=self.modification_query,
+            is_ordered=self.is_ordered
+        ).attempt(self.raw_response)
         if comparison:
             raw_earned = 1.0
         score = Score(
