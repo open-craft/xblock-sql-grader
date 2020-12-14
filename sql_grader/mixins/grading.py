@@ -179,7 +179,7 @@ class XBlockDataMixin:
     )
     answer_query = String(
         display_name=_('Answer Query'),
-        help=_('The correct response SQL statement(s)'),
+        help=_('A correct SQL response'),
         default='',
         scope=Scope.content,
         multiline_editor=True,
